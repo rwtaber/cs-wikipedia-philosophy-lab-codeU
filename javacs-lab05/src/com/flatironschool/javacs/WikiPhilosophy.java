@@ -3,6 +3,8 @@ package com.flatironschool.javacs;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
@@ -13,13 +15,14 @@ import org.jsoup.select.Elements;
 public class WikiPhilosophy {
 
 	final static WikiFetcher wf = new WikiFetcher();
+	final static String wiki = "https://en.wikipedia.org";
 
 	/**
 	 * Tests a conjecture about Wikipedia and Philosophy.
 	 *
 	 * https://en.wikipedia.org/wiki/Wikipedia:Getting_to_Philosophy
 	 *
-	 * 1. Clicking on the first non-parenthesized, non-italicized link
+	 * 1. Clicking on the first non-parenthesized, non-itahttps://en.wikipedia.org/wiki/William_Shakespearelicized link
      * 2. Ignoring external links, links to the current page, or red links
      * 3. Stopping when reaching "Philosophy", a page with no links or a page
      *    that does not exist, or when a loop occurs
@@ -27,47 +30,75 @@ public class WikiPhilosophy {
 	 * @param args
 	 * @throws IOException
 	 */
-	public static void main(String[] args) throws IOException {
+	public static int main(String[] args) throws IOException {
 
-    ArrayList route = new ArrayList();
-		Set<String> visited = new HashSet<String>();
-		String current_page = "https://en.wikipedia.org/wiki/Java_(programming_language)";
+		String current_page = "/wiki/Java_(programming_language)";
+		String end_page = "/wiki/Philosophy";
+		List<String> route = new ArrayList<String>();
+	  Set<String> visited = new HashSet<String>();
 
 		while(true) {
-			if current_page.contains("wiki/Philosophy") break;
-
 			route.add(current_page);
 			visited.add(current_page);
+			if (current_page.equals(end_page)) break;
 
-			for (Element link: getLinks(current_page)) {
-				String url = link.attr("abs:href");
-				String text = link.text();
+			Elements paragraphs = wf.fetchWikipedia(wiki + current_page);
+			paragraphs.select("i").remove();
+			paragraphs.select("em").remove();
+			boolean has_page = false;
+			int paren_balance = 0;
 
-				if validLink(current_page, link) {
-					current_page = url;
+			elementLoop:
+			for(Element p : paragraphs) {
+				Iterable<Node> iter = new WikiNodeIterable(p);
+				for(Node node : iter) {
+					if (node instanceof TextNode) {
+						TextNode t = (TextNode) node;
+						paren_balance += updateParenBalance(t.text());
+					} else {
+						Element e = (Element) node;
+						if (e.tagName() == "a" && isValidPage(e, current_page, paren_balance)) {
+							has_page = true;
+							String this_page = e.attr("href").split("#")[0];
+							if (visited.contains(this_page)) {
+								System.out.println("This page has been seen, exiting...");
+								return -1;
+							}
+							current_page = this_page;
+							break elementLoop;
+						}
+					}
 				}
 			}
-
-<a href="/w/index.php?title=Parallel_scavenge_garbage_collector&amp;action=edit&amp;redlink=1"
-class="new" title="Parallel scavenge garbage collector (page does not exist)">parallel scavenge garbage collector</a>
-
+			if (!has_page) {
+				System.out.println("Found page with no other pages, exiting...");
+				return -1;
+			}
 		}
+
+		for(int i = 1; i < route.size() + 1; i++) {
+			System.out.println(i + ")\t" + wiki + route.get(i-1));
+		}
+
+		return 0;
 	}
 
-	private Elements getLinks(String url) {
-		Elements paragraphs = wf.fetchWikipedia(url);
-		Elements para_no_italics = paragraphs.select("i").remove();
-		Elements para_no_parens = para_no_italics.toString().replaceAll("\\(.*\\)", "");
-		Document cleaned_pages = Jsoup.parse(para_no_parens);
-		return cleaned_pages.select("a[href]");
+	private static int updateParenBalance(String text) {
+		int ret = 0;
+		ret += text.length() - text.replace(")", "").length();
+		ret -= text.length() - text.replace("(", "").length();
+		return ret;
 	}
 
-	private boolean validLink(String current_page, String url) {
-		internal = url.contains(wikipedia.org);
-		current = url.contains(current_page);
-		redlink = url.contains("redlink=1");
-		uppercase = Character.isUpperCase(text.charAt(0));
+	private static boolean isValidPage(Element link, String current_page, int paren_balance) {
+		String text = link.text();
+		String url = link.absUrl("href");
 
-		return internal && !current && !redlink && !uppercase;
+		boolean internal = url.contains(wiki);
+		boolean current = url.contains(current_page);
+		boolean redlink = url.contains("redlink=1");
+		boolean uppercase = Character.isUpperCase(text.charAt(0));
+
+		return internal && !current && !redlink && !uppercase && paren_balance == 0;
 	}
 }
